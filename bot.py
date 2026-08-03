@@ -143,7 +143,7 @@ def process_finish(db, game, tickets_key, games_key, game_type):
     if game_type in ["fast", "standard"]:
         create_game(db, game_type)
 
-ddef perfect_block(title, lines, width=26):
+def perfect_block(title, lines, width=26):
     """Идеальные рамки: все эмодзи заменяются на ## для точного расчёта ширины.
        width - это ширина внутренней части (количество символов '═' в верхней границе).
     """
