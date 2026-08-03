@@ -194,27 +194,27 @@ def start(message):
     uid = str(message.from_user.id)
     first_time = uid not in db["users"]
 
-    # Сохраняем пользователя, если он новый
+    # Сохраняем пользователя
     if first_time:
         db["users"][uid] = {"username": message.from_user.username, "joined": datetime.now().strftime("%Y-%m-%d")}
     else:
-        db["users"][uid]["username"] = message.from_user.username  # обновляем username
+        db["users"][uid]["username"] = message.from_user.username
 
     # Проверяем реферальный код
     args = message.text.split()
     if len(args) > 1 and args[1].startswith("ref"):
         ref_id = args[1].replace("ref", "")
         if ref_id != uid:
-            # Увеличиваем счётчик приглашённых у реферера
             db.setdefault("referrals", {}).setdefault(ref_id, {"count": 0, "rewarded": False})
             db["referrals"][ref_id]["count"] += 1
 
-            # Если новый пользователь — сразу даём ему бесплатный билет в STANDART
+            # Выдаём бесплатный билет новому юзеру
             if first_time:
+                # Убедимся, что игра есть
                 game = get_active_game(db, "standard")
                 if not game:
-                    # Если игры нет — создаём её
                     game = create_game(db, "standard")
+                
                 ticket_number = len(db.get("tickets", [])) + 1
                 db.setdefault("tickets", []).append({
                     "id": ticket_number,
@@ -222,7 +222,10 @@ def start(message):
                     "username": message.from_user.username,
                     "game_id": game["id"]
                 })
+                
+                # СРАЗУ СОХРАНЯЕМ, чтобы билет не потерялся
                 save_db(db)
+                
                 try:
                     bot.send_message(
                         int(uid),
