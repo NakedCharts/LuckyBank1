@@ -6,7 +6,7 @@ import random
 import threading
 import requests
 import time
-import unicodedata
+import emoji
 from datetime import datetime, timedelta
 
 # ==================== НАСТРОЙКИ ====================
@@ -121,41 +121,36 @@ def finish_fast_game(game_id):
     game = next((g for g in db.get("fast_games", []) if g["id"] == game_id and g["status"] == "active"), None)
     if game: process_finish(db, game, "fast_tickets", "fast_games")
 
-def wcwidth(c):
-    """Точная ширина символа: 2 для восточноазиатских и эмодзи, 1 для остальных"""
-    if ord(c) < 128: return 1
-    # Эмодзи и широкие символы
-    if unicodedata.category(c) in ('So', 'Cn') or ord(c) > 0x2000:
-        return 2
-    return 2 if unicodedata.east_asian_width(c) in ('W', 'F') else 1
-
-def visual_len(text):
-    return sum(wcwidth(c) for c in text)
-
 def perfect_block(title, lines):
-    W = 26  # внутренняя ширина блока (без стенок)
+    """
+    ИДЕАЛЬНО РОВНЫЙ БЛОК С ИСПОЛЬЗОВАНИЕМ БИБЛИОТЕКИ emoji.
+    Заменяет эмодзи на двухсимвольные плейсхолдеры, чтобы гарантировать ровные стенки.
+    """
+    W = 26  # внутренняя ширина
     top = "╔" + "═" * W + "╗"
+    empty = "║" + " " * W + "║"
     
-    # Заголовок центрируется
-    title_len = visual_len(title)
+    # Функция для моноширинной длины строки
+    def mono_len(text):
+        # Заменяем все эмодзи на два символа
+        clean = emoji.replace_emoji(text, replace='##')
+        return len(clean)
+    
+    # Заголовок
+    title_len = mono_len(title)
     left_pad = (W - title_len) // 2
     right_pad = W - title_len - left_pad
-    title_line = "║ " + " " * left_pad + title + " " * right_pad + " ║"
+    title_line = "║" + " " * left_pad + title + " " * right_pad + "║"
     
-    empty_line = "║" + " " * W + "║"
-    
+    # Строки данных
     data_lines = []
     for line in lines:
-        # Вычисляем длину строки данных без учёта левого отступа
-        data_len = visual_len(line)
-        # Левый отступ всегда 1 пробел, правый отступ дополняет до W-1
-        right_pad = W - 1 - data_len
-        if right_pad < 0: right_pad = 0  # на случай переполнения
-        data_lines.append("║ " + line + " " * right_pad + "║")
+        line_len = mono_len(line)
+        pad = W - line_len
+        data_lines.append("║" + line + " " * pad + "║")
     
     bottom = "╚" + "═" * W + "╝"
-    
-    block = "\n".join([top, title_line, empty_line] + data_lines + [bottom])
+    block = "\n".join([top, title_line, empty] + data_lines + [bottom])
     return "```\n" + block + "\n```"
 
 def create_invoice(user_id, game_id, amount, game_type):
@@ -459,7 +454,7 @@ def text_handler(message):
     bot.send_message(message.chat.id, "Используй /start")
 
 # ==================== ЗАПУСК ====================
-print("Lucky Bank v8.0 ULTIMATE BLOCK")
+print("Lucky Bank v9.0 TRUE BLOCK")
 bot.remove_webhook()
 time.sleep(1)
 db = load_db()
