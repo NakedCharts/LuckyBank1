@@ -6,6 +6,7 @@ import random
 import threading
 import requests
 import time
+import emoji
 from datetime import datetime, timedelta
 
 # ==================== НАСТРОЙКИ ====================
@@ -143,19 +144,26 @@ def process_finish(db, game, tickets_key, games_key, game_type):
         create_game(db, game_type)
 
 def perfect_block(title, lines, width=26):
+    """Идеальные рамки: все эмодзи заменяются на ## для точного расчёта ширины."""
     top = "╔" + "═" * width + "╗"
     empty = "║ " + " " * (width - 2) + " ║"
+    
     def mono_len(text):
-        return sum(2 if ord(c) > 127 else 1 for c in text)
+        # Заменяем все эмодзи на '##' (два символа)
+        clean = emoji.replace_emoji(text, replace='##')
+        return len(clean)
+    
     title_len = mono_len(title)
     left_pad = (width - title_len) // 2
     right_pad = width - title_len - left_pad
     title_line = "║ " + " " * left_pad + title + " " * right_pad + " ║"
+    
     data_lines = []
     for line in lines:
         line_len = mono_len(line)
         pad = width - line_len - 2
         data_lines.append("║ " + line + " " * pad + " ║")
+    
     bottom = "╚" + "═" * width + "╝"
     return "```\n" + "\n".join([top, title_line, empty] + data_lines + [bottom]) + "\n```"
 
@@ -210,7 +218,11 @@ def start(message):
 @bot.message_handler(commands=['LuckyBank_X7k9M_Admin_2024'])
 def admin_panel(message):
     if message.from_user.id != ADMIN_ID: return
+    show_admin_main(message.chat.id)
+
+def show_admin_main(chat_id):
     db = load_db()
+    total = sum([g.get("prize_pool",0)*db["settings"]["commission"]/80 for g in db["games"] if g["status"]=="finished"])
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton("⚙️ Стандартные настройки", callback_data="admin_standard"),
                types.InlineKeyboardButton("🎯 Разовый розыгрыш", callback_data="admin_temp"),
@@ -219,8 +231,7 @@ def admin_panel(message):
                types.InlineKeyboardButton("💰 Баланс", callback_data="admin_balance"),
                types.InlineKeyboardButton("📢 Рассылка", callback_data="admin_broadcast"),
                types.InlineKeyboardButton("🚪 Выйти", callback_data="admin_exit"))
-    total = sum([g.get("prize_pool",0)*db["settings"]["commission"]/80 for g in db["games"] if g["status"]=="finished"])
-    bot.send_message(message.chat.id, f"🔐 *АДМИН-ПАНЕЛЬ*\n💰 Заработано: *{total:.1f} TON*", parse_mode="Markdown", reply_markup=markup)
+    bot.send_message(chat_id, f"🔐 *АДМИН-ПАНЕЛЬ*\n💰 Заработано: *{total:.1f} TON*", parse_mode="Markdown", reply_markup=markup)
 
 # ==================== CALLBACK ====================
 admin_input_state = {}
@@ -236,6 +247,7 @@ def callback_master(call):
         except:
             bot.send_message(call.message.chat.id, text, parse_mode="Markdown", reply_markup=markup)
 
+    # --- Навигация ---
     if data == "show_games":
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton("🎰STANDART", callback_data="view_standard"),
@@ -253,6 +265,7 @@ def callback_master(call):
         bot.delete_message(call.message.chat.id, call.message.message_id)
         bot.send_message(call.message.chat.id, "🏦 Главное меню", reply_markup=markup)
 
+    # --- Просмотр игр ---
     elif data.startswith("view_"):
         game_type = data[5:]
         if game_type == "whale" and not db["whale_game"]["active"]:
@@ -287,13 +300,11 @@ def callback_master(call):
                    types.InlineKeyboardButton("🔙 Назад", callback_data="show_games"))
         edit_or_send(block, markup)
 
+    # --- Покупка и проверка ---
     elif data.startswith("buy_"):
         game_type = data[4:]
         game = get_active_game(db, game_type)
-        if game_type == "standard":
-            price = db["settings"]["ticket_price"]
-        else:
-            price = db[game_type + "_game"]["ticket_price"]
+        price = db[game_type + "_game"]["ticket_price"] if game_type != "standard" else db["settings"]["ticket_price"]
         if not game: bot.answer_callback_query(call.id, "Нет игры"); return
 
         resp = create_invoice(call.from_user.id, game["id"], price, game_type)
@@ -320,7 +331,6 @@ def callback_master(call):
             if inv["status"] == "paid":
                 game_type = pay["game_type"]; game_id = pay["game_id"]
                 tickets_key = f"{game_type}_tickets"
-                # Глобальный счётчик билетов (для номера)
                 ticket_number = len(db.get(tickets_key, [])) + 1
                 db.setdefault(tickets_key, []).append({"id": ticket_number, "user_id": call.from_user.id, "username": call.from_user.username, "game_id": game_id})
                 del db["pending_payments"][uid]; save_db(db)
@@ -334,6 +344,7 @@ def callback_master(call):
             else: bot.answer_callback_query(call.id, "⏳ Не оплачен")
         else: bot.answer_callback_query(call.id, "Ошибка проверки")
 
+    # --- Мои билеты, Зал славы, Рефералы, Правила ---
     elif data.startswith("mytickets_"):
         game_type = data[10:]
         tickets = [t for t in db.get(f"{game_type}_tickets", []) if t["user_id"] == call.from_user.id]
@@ -378,87 +389,42 @@ def callback_master(call):
 
     # ========== АДМИНКА ==========
     elif data == "admin_standard" and call.from_user.id == ADMIN_ID:
-        s = db["settings"]
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(types.InlineKeyboardButton(f"🎫 Билетов: {s['max_tickets']}", callback_data="std_tickets"),
-                   types.InlineKeyboardButton(f"🏆 Победителей: {s['winners_count']}", callback_data="std_winners"),
-                   types.InlineKeyboardButton(f"💵 Цена: {s['ticket_price']} TON", callback_data="std_price"),
-                   types.InlineKeyboardButton(f"📊 Комиссия: {s['commission']}%", callback_data="std_commission"),
-                   types.InlineKeyboardButton(f"⏰ Длительность: {s['duration_hours']}ч", callback_data="std_duration"),
-                   types.InlineKeyboardButton("🔙 Назад", callback_data="admin_back"))
-        edit_or_send("⚙️ СТАНДАРТНЫЕ НАСТРОЙКИ", markup)
-
-    elif data == "admin_temp" and call.from_user.id == ADMIN_ID:
-        # упрощённый разовый режим (можно вернуть из старых версий)
-        bot.answer_callback_query(call.id, "Разовый розыгрыш временно отключён")
-
+        show_std(call.message.chat.id, call.message.message_id)
     elif data == "admin_fast" and call.from_user.id == ADMIN_ID:
-        s = db["fast_game"]
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(types.InlineKeyboardButton(f"🎫 Билетов: {s['max_tickets']}", callback_data="fst_tickets"),
-                   types.InlineKeyboardButton(f"💵 Цена: {s['ticket_price']} TON", callback_data="fst_price"),
-                   types.InlineKeyboardButton(f"📊 Комиссия: {s['commission']}%", callback_data="fst_commission"),
-                   types.InlineKeyboardButton(f"⏰ Длительность: {s['duration_minutes']}м", callback_data="fst_duration"),
-                   types.InlineKeyboardButton("🔙 Назад", callback_data="admin_back"))
-        edit_or_send("⚡️ БЫСТРЫЙ РОЗЫГРЫШ", markup)
-
+        show_fast(call.message.chat.id, call.message.message_id)
     elif data == "admin_whale" and call.from_user.id == ADMIN_ID:
-        s = db["whale_game"]
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(types.InlineKeyboardButton(f"🎫 Билетов: {s['max_tickets']}", callback_data="whl_tickets"),
-                   types.InlineKeyboardButton(f"💵 Цена: {s['ticket_price']} TON", callback_data="whl_price"),
-                   types.InlineKeyboardButton(f"📊 Комиссия: {s['commission']}%", callback_data="whl_commission"),
-                   types.InlineKeyboardButton(f"⏰ Длительность: {s['duration_hours']}ч", callback_data="whl_duration"),
-                   types.InlineKeyboardButton("🚀 ЗАПУСТИТЬ WHALE FRENZY", callback_data="launch_whale"),
-                   types.InlineKeyboardButton("🔙 Назад", callback_data="admin_back"))
-        status = "АКТИВЕН" if s["active"] else "НЕ АКТИВЕН"
-        edit_or_send(f"🐳 WHALE FRENZY\nСтатус: *{status}*", markup)
-
+        show_whale(call.message.chat.id, call.message.message_id)
     elif data == "launch_whale" and call.from_user.id == ADMIN_ID:
         if db["whale_game"]["active"]:
             bot.answer_callback_query(call.id, "Уже запущен!")
         else:
             create_game(db, "whale")
             bot.answer_callback_query(call.id, "🐳 WHALE FRENZY запущен! Уведомления ушли.")
-
+            show_whale(call.message.chat.id, call.message.message_id)  # обновим меню
     elif data == "admin_balance" and call.from_user.id == ADMIN_ID:
         total = sum([g.get("prize_pool",0)*db["settings"]["commission"]/80 for g in db["games"] if g["status"]=="finished"])
         markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🔙 Назад", callback_data="admin_back"))
         edit_or_send(f"💰 *Баланс*\nЗаработано: *{total:.1f} TON*", markup)
-
     elif data == "admin_broadcast" and call.from_user.id == ADMIN_ID:
         admin_input_state[uid] = "broadcast"
         markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🔙 Отмена", callback_data="admin_back"))
         bot.send_message(call.message.chat.id, "📢 Введи сообщение:", reply_markup=markup)
-
     elif data == "admin_back" and call.from_user.id == ADMIN_ID:
-        db = load_db()
-        total = sum([g.get("prize_pool",0)*db["settings"]["commission"]/80 for g in db["games"] if g["status"]=="finished"])
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(types.InlineKeyboardButton("⚙️ Стандартные настройки", callback_data="admin_standard"),
-                   types.InlineKeyboardButton("🎯 Разовый розыгрыш", callback_data="admin_temp"),
-                   types.InlineKeyboardButton("⚡️ Быстрый розыгрыш", callback_data="admin_fast"),
-                   types.InlineKeyboardButton("🐳 WHALE FRENZY", callback_data="admin_whale"),
-                   types.InlineKeyboardButton("💰 Баланс", callback_data="admin_balance"),
-                   types.InlineKeyboardButton("📢 Рассылка", callback_data="admin_broadcast"),
-                   types.InlineKeyboardButton("🚪 Выйти", callback_data="admin_exit"))
         bot.delete_message(call.message.chat.id, call.message.message_id)
-        bot.send_message(call.message.chat.id, f"🔐 *АДМИН-ПАНЕЛЬ*\n💰 Заработано: *{total:.1f} TON*", parse_mode="Markdown", reply_markup=markup)
-
+        show_admin_main(call.message.chat.id)
     elif data == "admin_exit" and call.from_user.id == ADMIN_ID:
         admin_input_state.pop(uid, None)
         bot.delete_message(call.message.chat.id, call.message.message_id)
 
+    # Кнопки изменения параметров
     elif data.startswith("std_") and call.from_user.id == ADMIN_ID:
         param = data[4:]
         admin_input_state[uid] = f"set_std_{param}"
         bot.send_message(call.message.chat.id, f"Введи новое значение *{param}*:", parse_mode="Markdown")
-
     elif data.startswith("fst_") and call.from_user.id == ADMIN_ID:
         param = data[4:]
         admin_input_state[uid] = f"set_fst_{param}"
         bot.send_message(call.message.chat.id, f"Введи новое значение *{param}*:", parse_mode="Markdown")
-
     elif data.startswith("whl_") and call.from_user.id == ADMIN_ID:
         param = data[4:]
         admin_input_state[uid] = f"set_whl_{param}"
@@ -466,6 +432,53 @@ def callback_master(call):
 
     else:
         bot.answer_callback_query(call.id)
+
+# Функции отображения настроек
+def show_std(chat_id, msg_id=None):
+    db = load_db(); s = db["settings"]
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(f"🎫 Билетов: {s['max_tickets']}", callback_data="std_tickets"),
+               types.InlineKeyboardButton(f"🏆 Победителей: {s['winners_count']}", callback_data="std_winners"),
+               types.InlineKeyboardButton(f"💵 Цена: {s['ticket_price']} TON", callback_data="std_price"),
+               types.InlineKeyboardButton(f"📊 Комиссия: {s['commission']}%", callback_data="std_commission"),
+               types.InlineKeyboardButton(f"⏰ Длительность: {s['duration_hours']}ч", callback_data="std_duration"),
+               types.InlineKeyboardButton("🔙 Назад", callback_data="admin_back"))
+    if msg_id:
+        try: bot.edit_message_text("⚙️ СТАНДАРТНЫЕ НАСТРОЙКИ", chat_id, msg_id, reply_markup=markup)
+        except: bot.send_message(chat_id, "⚙️ СТАНДАРТНЫЕ НАСТРОЙКИ", reply_markup=markup)
+    else:
+        bot.send_message(chat_id, "⚙️ СТАНДАРТНЫЕ НАСТРОЙКИ", reply_markup=markup)
+
+def show_fast(chat_id, msg_id=None):
+    db = load_db(); s = db["fast_game"]
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(f"🎫 Билетов: {s['max_tickets']}", callback_data="fst_tickets"),
+               types.InlineKeyboardButton(f"💵 Цена: {s['ticket_price']} TON", callback_data="fst_price"),
+               types.InlineKeyboardButton(f"📊 Комиссия: {s['commission']}%", callback_data="fst_commission"),
+               types.InlineKeyboardButton(f"⏰ Длительность: {s['duration_minutes']}м", callback_data="fst_duration"),
+               types.InlineKeyboardButton("🔙 Назад", callback_data="admin_back"))
+    if msg_id:
+        try: bot.edit_message_text("⚡️ БЫСТРЫЙ РОЗЫГРЫШ", chat_id, msg_id, reply_markup=markup)
+        except: bot.send_message(chat_id, "⚡️ БЫСТРЫЙ РОЗЫГРЫШ", reply_markup=markup)
+    else:
+        bot.send_message(chat_id, "⚡️ БЫСТРЫЙ РОЗЫГРЫШ", reply_markup=markup)
+
+def show_whale(chat_id, msg_id=None):
+    db = load_db(); s = db["whale_game"]
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(f"🎫 Билетов: {s['max_tickets']}", callback_data="whl_tickets"),
+               types.InlineKeyboardButton(f"💵 Цена: {s['ticket_price']} TON", callback_data="whl_price"),
+               types.InlineKeyboardButton(f"📊 Комиссия: {s['commission']}%", callback_data="whl_commission"),
+               types.InlineKeyboardButton(f"⏰ Длительность: {s['duration_hours']}ч", callback_data="whl_duration"),
+               types.InlineKeyboardButton("🚀 ЗАПУСТИТЬ WHALE FRENZY", callback_data="launch_whale"),
+               types.InlineKeyboardButton("🔙 Назад", callback_data="admin_back"))
+    status = "АКТИВЕН" if s["active"] else "НЕ АКТИВЕН"
+    text = f"🐳 WHALE FRENZY\nСтатус: *{status}*"
+    if msg_id:
+        try: bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=markup)
+        except: bot.send_message(chat_id, text, parse_mode="Markdown", reply_markup=markup)
+    else:
+        bot.send_message(chat_id, text, parse_mode="Markdown", reply_markup=markup)
 
 # ==================== СОХРАНЕНИЕ НАСТРОЕК ====================
 @bot.message_handler(func=lambda m: True)
@@ -499,25 +512,29 @@ def text_handler(message):
             if parts[1] == "std":
                 param = parts[2]
                 db["settings"][param] = val
+                save_db(db)
+                del admin_input_state[uid]
+                show_std(message.chat.id)  # сразу показываем обновлённые настройки
             elif parts[1] == "fst":
                 param = parts[2]
                 db["fast_game"][param] = val
+                save_db(db)
+                del admin_input_state[uid]
+                show_fast(message.chat.id)
             elif parts[1] == "whl":
                 param = parts[2]
                 db["whale_game"][param] = val
+                save_db(db)
+                del admin_input_state[uid]
+                show_whale(message.chat.id)
             else:
                 bot.send_message(message.chat.id, "Неизвестный параметр.")
-                return
-
-            save_db(db)
-            del admin_input_state[uid]
-            bot.send_message(message.chat.id, "✅ Сохранено!")
             return
 
     bot.send_message(message.chat.id, "Используй /start")
 
 # ==================== ЗАПУСК ====================
-print("Lucky Bank v10 FINAL")
+print("Lucky Bank FINAL PERFECT")
 bot.remove_webhook()
 time.sleep(1)
 db = load_db()
