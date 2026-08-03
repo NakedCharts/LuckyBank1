@@ -323,7 +323,7 @@ def callback_master(call):
         edit_or_send(block, markup)
 
     # --- Покупка и проверка ---
-    elif data.startswith("buy_"):
+        elif data.startswith("buy_"):
         game_type = data[4:]
         game = get_active_game(db, game_type)
         price = db[game_type + "_game"]["ticket_price"] if game_type != "standard" else db["settings"]["ticket_price"]
@@ -342,7 +342,7 @@ def callback_master(call):
         else:
             bot.answer_callback_query(call.id, "Ошибка платежа")
 
-        elif data.startswith("chk_"):
+    elif data.startswith("chk_"):
         inv_id = data[4:]
         pay = db["pending_payments"].get(uid)
         if not pay or pay["inv_id"] != inv_id: bot.answer_callback_query(call.id, "Не найден"); return
@@ -392,8 +392,10 @@ def callback_master(call):
                 bot.send_message(call.message.chat.id, f"✅ *Билет #{ticket_number}*\nВ игре: {sold}/{game['max_tickets']}", parse_mode="Markdown")
                 if sold >= game["max_tickets"]:
                     finish_game(game["id"], game_type)
-            else: bot.answer_callback_query(call.id, "⏳ Не оплачен")
-        else: bot.answer_callback_query(call.id, "Ошибка проверки")
+            else:
+                bot.answer_callback_query(call.id, "⏳ Не оплачен")
+        else:
+            bot.answer_callback_query(call.id, "Ошибка проверки")
 
     # --- Мои билеты, Зал славы, Рефералы, Правила ---
     elif data.startswith("mytickets_"):
