@@ -124,7 +124,6 @@ def finish_fast_game(game_id):
 def perfect_block(title, lines):
     W = 26
     top = "╔" + "═" * W + "╗"
-    # Пустая строка с правильными отступами
     empty = "║ " + " " * (W - 2) + " ║"
     
     def mono_len(text):
@@ -144,8 +143,8 @@ def perfect_block(title, lines):
     data_lines = []
     for line in lines:
         line_len = mono_len(line)
-        pad = W - line_len
-        data_lines.append("║ " + line + " " * (pad - 2) + " ║")
+        pad = W - line_len - 2  # минус 2 пробела (по одному с каждой стороны)
+        data_lines.append("║ " + line + " " * pad + " ║")
     
     bottom = "╚" + "═" * W + "╝"
     block = "\n".join([top, title_line, empty] + data_lines + [bottom])
