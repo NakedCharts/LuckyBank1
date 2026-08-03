@@ -122,32 +122,30 @@ def finish_fast_game(game_id):
     if game: process_finish(db, game, "fast_tickets", "fast_games")
 
 def perfect_block(title, lines):
-    """
-    ИДЕАЛЬНО РОВНЫЙ БЛОК С ИСПОЛЬЗОВАНИЕМ БИБЛИОТЕКИ emoji.
-    Заменяет эмодзи на двухсимвольные плейсхолдеры, чтобы гарантировать ровные стенки.
-    """
-    W = 26  # внутренняя ширина
+    W = 26
     top = "╔" + "═" * W + "╗"
-    empty = "║" + " " * W + "║"
+    # Пустая строка с правильными отступами
+    empty = "║ " + " " * (W - 2) + " ║"
     
-    # Функция для моноширинной длины строки
     def mono_len(text):
-        # Заменяем все эмодзи на два символа
-        clean = emoji.replace_emoji(text, replace='##')
-        return len(clean)
+        length = 0
+        for ch in text:
+            if ord(ch) > 127:
+                length += 2
+            else:
+                length += 1
+        return length
     
-    # Заголовок
     title_len = mono_len(title)
     left_pad = (W - title_len) // 2
     right_pad = W - title_len - left_pad
-    title_line = "║" + " " * left_pad + title + " " * right_pad + "║"
+    title_line = "║ " + " " * left_pad + title + " " * right_pad + " ║"
     
-    # Строки данных
     data_lines = []
     for line in lines:
         line_len = mono_len(line)
         pad = W - line_len
-        data_lines.append("║" + line + " " * pad + "║")
+        data_lines.append("║ " + line + " " * (pad - 2) + " ║")
     
     bottom = "╚" + "═" * W + "╝"
     block = "\n".join([top, title_line, empty] + data_lines + [bottom])
