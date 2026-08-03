@@ -143,25 +143,31 @@ def process_finish(db, game, tickets_key, games_key, game_type):
     if game_type in ["fast", "standard"]:
         create_game(db, game_type)
 
-def perfect_block(title, lines, width=26):
-    """Идеальные рамки: все эмодзи заменяются на ## для точного расчёта ширины."""
+ddef perfect_block(title, lines, width=26):
+    """Идеальные рамки: все эмодзи заменяются на ## для точного расчёта ширины.
+       width - это ширина внутренней части (количество символов '═' в верхней границе).
+    """
     top = "╔" + "═" * width + "╗"
-    empty = "║ " + " " * (width - 2) + " ║"
+    empty = "║ " + " " * (width - 2) + " ║"   # длина 1+1+(width-2)+1+1 = width+2
     
     def mono_len(text):
         # Заменяем все эмодзи на '##' (два символа)
         clean = emoji.replace_emoji(text, replace='##')
         return len(clean)
     
+    # Ширина под содержимое между пробелами внутри рамки: width - 2
+    content_width = width - 2
+    
+    # Заголовок центрируется в content_width
     title_len = mono_len(title)
-    left_pad = (width - title_len) // 2
-    right_pad = width - title_len - left_pad
+    left_pad = (content_width - title_len) // 2
+    right_pad = content_width - title_len - left_pad
     title_line = "║ " + " " * left_pad + title + " " * right_pad + " ║"
     
     data_lines = []
     for line in lines:
         line_len = mono_len(line)
-        pad = width - line_len - 2
+        pad = content_width - line_len
         data_lines.append("║ " + line + " " * pad + " ║")
     
     bottom = "╚" + "═" * width + "╝"
@@ -503,6 +509,16 @@ def text_handler(message):
 
         elif state.startswith("set_"):
             parts = state.split("_")
+            # Маппинг коротких названий (из кнопок) на реальные ключи в базе
+            param_map = {
+                "tickets": "max_tickets",
+                "winners": "winners_count",
+                "price": "ticket_price",
+                "commission": "commission",
+                "duration": "duration_hours",
+                # для быстрого режима duration_minutes
+                "duration_minutes": "duration_minutes"
+            }
             try:
                 val = float(message.text) if parts[-1] in ["price","commission"] else int(message.text)
             except:
@@ -510,19 +526,19 @@ def text_handler(message):
                 return
 
             if parts[1] == "std":
-                param = parts[2]
+                param = param_map.get(parts[2], parts[2])
                 db["settings"][param] = val
                 save_db(db)
                 del admin_input_state[uid]
-                show_std(message.chat.id)  # сразу показываем обновлённые настройки
+                show_std(message.chat.id)
             elif parts[1] == "fst":
-                param = parts[2]
+                param = param_map.get(parts[2], parts[2])
                 db["fast_game"][param] = val
                 save_db(db)
                 del admin_input_state[uid]
                 show_fast(message.chat.id)
             elif parts[1] == "whl":
-                param = parts[2]
+                param = param_map.get(parts[2], parts[2])
                 db["whale_game"][param] = val
                 save_db(db)
                 del admin_input_state[uid]
