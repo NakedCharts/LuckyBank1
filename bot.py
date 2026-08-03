@@ -190,54 +190,70 @@ def check_invoice(invoice_id):
 # ==================== КОМАНДЫ ====================
 @bot.message_handler(commands=['start'])
 def start(message):
-    db = load_db(); uid = str(message.from_user.id)
+    db = load_db()
+    uid = str(message.from_user.id)
     first_time = uid not in db["users"]
-    db["users"][uid] = {"username": message.from_user.username}
+
+    # Сохраняем пользователя, если он новый
+    if first_time:
+        db["users"][uid] = {"username": message.from_user.username, "joined": datetime.now().strftime("%Y-%m-%d")}
+    else:
+        db["users"][uid]["username"] = message.from_user.username  # обновляем username
+
+    # Проверяем реферальный код
     args = message.text.split()
     if len(args) > 1 and args[1].startswith("ref"):
-        ref_id = args[1].replace("ref","")
+        ref_id = args[1].replace("ref", "")
         if ref_id != uid:
+            # Увеличиваем счётчик приглашённых у реферера
             db.setdefault("referrals", {}).setdefault(ref_id, {"count": 0, "rewarded": False})
             db["referrals"][ref_id]["count"] += 1
-            if not db["referrals"][ref_id]["rewarded"]:
+
+            # Если новый пользователь — сразу даём ему бесплатный билет в STANDART
+            if first_time:
                 game = get_active_game(db, "standard")
-                if game:
-                    db.setdefault("tickets", []).append({"id": len(db.get("tickets", [])) + 1, "user_id": int(ref_id), "username": db["users"].get(ref_id,{}).get("username"), "game_id": game["id"]})
-                    db["referrals"][ref_id]["rewarded"] = True
-                    save_db(db)
-                    try: bot.send_message(int(ref_id), "🎁 Бесплатный билет за друга!")
-                    except: pass
+                if not game:
+                    # Если игры нет — создаём её
+                    game = create_game(db, "standard")
+                ticket_number = len(db.get("tickets", [])) + 1
+                db.setdefault("tickets", []).append({
+                    "id": ticket_number,
+                    "user_id": int(uid),
+                    "username": message.from_user.username,
+                    "game_id": game["id"]
+                })
+                save_db(db)
+                try:
+                    bot.send_message(
+                        int(uid),
+                        f"🎁 Ты получил *бесплатный билет #{ticket_number}* в 🎰 STANDART за переход по реферальной ссылке!",
+                        parse_mode="Markdown"
+                    )
+                except:
+                    pass
+
     save_db(db)
 
+    # Приветственное сообщение
     if first_time:
-        welcome = "Тебя приветствует Lucky Bank! Каждый твой билет — это не просто покупка, это твоя доля в общем банке. Чем больше игроков, тем огромнее призовой фонд! Все средства собираются в единый фонд, а в конце игры рандомно выбираются победители, которые заберут всё!❤️‍🔥🎰\n\nЕсли готов жми \"🍀Розыгрыши\""
+        welcome = (
+            "Тебя приветствует Lucky Bank! Каждый твой билет — это не просто покупка, "
+            "это твоя доля в общем банке. Чем больше игроков, тем огромнее призовой фонд! "
+            "Все средства собираются в единый фонд, а в конце игры рандомно выбираются "
+            "победители, которые заберут всё!❤️‍🔥🎰\n\n"
+            "Если готов жми \"🍀Розыгрыши\""
+        )
     else:
         welcome = "🏦 Главное меню"
-    
+
     markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(types.InlineKeyboardButton("🍀Розыгрыши", callback_data="show_games"),
-               types.InlineKeyboardButton("🏆Зал славы", callback_data="winners_history"),
-               types.InlineKeyboardButton("👥Рефералы", callback_data="referral"),
-               types.InlineKeyboardButton("📖 Правила", callback_data="rules"))
+    markup.add(
+        types.InlineKeyboardButton("🍀Розыгрыши", callback_data="show_games"),
+        types.InlineKeyboardButton("🏆Зал славы", callback_data="winners_history"),
+        types.InlineKeyboardButton("👥Рефералы", callback_data="referral"),
+        types.InlineKeyboardButton("📖 Правила", callback_data="rules")
+    )
     bot.send_message(message.chat.id, welcome, parse_mode="Markdown", reply_markup=markup)
-
-@bot.message_handler(commands=['LuckyBank_X7k9M_Admin_2024'])
-def admin_panel(message):
-    if message.from_user.id != ADMIN_ID: return
-    show_admin_main(message.chat.id)
-
-def show_admin_main(chat_id):
-    db = load_db()
-    total = sum([g.get("prize_pool",0)*db["settings"]["commission"]/80 for g in db["games"] if g["status"]=="finished"])
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(types.InlineKeyboardButton("⚙️ Стандартные настройки", callback_data="admin_standard"),
-               types.InlineKeyboardButton("🎯 Разовый розыгрыш", callback_data="admin_temp"),
-               types.InlineKeyboardButton("⚡️ Быстрый розыгрыш", callback_data="admin_fast"),
-               types.InlineKeyboardButton("🐳 WHALE FRENZY", callback_data="admin_whale"),
-               types.InlineKeyboardButton("💰 Баланс", callback_data="admin_balance"),
-               types.InlineKeyboardButton("📢 Рассылка", callback_data="admin_broadcast"),
-               types.InlineKeyboardButton("🚪 Выйти", callback_data="admin_exit"))
-    bot.send_message(chat_id, f"🔐 *АДМИН-ПАНЕЛЬ*\n💰 Заработано: *{total:.1f} TON*", parse_mode="Markdown", reply_markup=markup)
 
 # ==================== CALLBACK ====================
 admin_input_state = {}
@@ -326,7 +342,7 @@ def callback_master(call):
         else:
             bot.answer_callback_query(call.id, "Ошибка платежа")
 
-    elif data.startswith("chk_"):
+        elif data.startswith("chk_"):
         inv_id = data[4:]
         pay = db["pending_payments"].get(uid)
         if not pay or pay["inv_id"] != inv_id: bot.answer_callback_query(call.id, "Не найден"); return
@@ -339,7 +355,36 @@ def callback_master(call):
                 tickets_key = f"{game_type}_tickets"
                 ticket_number = len(db.get(tickets_key, [])) + 1
                 db.setdefault(tickets_key, []).append({"id": ticket_number, "user_id": call.from_user.id, "username": call.from_user.username, "game_id": game_id})
-                del db["pending_payments"][uid]; save_db(db)
+                del db["pending_payments"][uid]
+
+                # --- РЕФЕРАЛЬНАЯ СИСТЕМА ---
+                for ref_id, ref_data in db.get("referrals", {}).items():
+                    if not ref_data.get("rewarded", False):
+                        std_game = get_active_game(db, "standard")
+                        if not std_game:
+                            std_game = create_game(db, "standard")
+                        ref_ticket_number = len(db.get("tickets", [])) + 1
+                        db.setdefault("tickets", []).append({
+                            "id": ref_ticket_number,
+                            "user_id": int(ref_id),
+                            "username": db["users"].get(ref_id, {}).get("username", "Аноним"),
+                            "game_id": std_game["id"]
+                        })
+                        ref_data["rewarded"] = True
+                        save_db(db)
+                        try:
+                            bot.send_message(
+                                int(ref_id),
+                                f"🎫 Вы получили *1 билет* за приглашенного друга в розыгрыше 🎰 STANDART!\n"
+                                f"Посмотреть — 🍀Розыгрыши > 🎰 STANDART > Мои билеты",
+                                parse_mode="Markdown"
+                            )
+                        except:
+                            pass
+                        break
+                # --- КОНЕЦ РЕФЕРАЛЬНОЙ СИСТЕМЫ ---
+
+                save_db(db)
 
                 game = get_active_game(db, game_type)
                 sold = len([t for t in db.get(tickets_key, []) if t["game_id"] == game["id"]])
