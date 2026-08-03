@@ -121,18 +121,29 @@ def finish_fast_game(game_id):
     if game: process_finish(db, game, "fast_tickets", "fast_games")
 
 def perfect_block(title, lines):
-    """Рисует идеально ровный блок с моноширинным шрифтом (code block)"""
-    w = 26
-    res = ["╔" + "═" * w + "╗"]
-    res.append("║ " + title.center(w - 2) + " ║")
-    res.append("║" + " " * w + "║")
+    """
+    ИДЕАЛЬНО РОВНЫЙ БЛОК: правая стенка как левая.
+    Ширина блока = 28 (включая рамки). Внутренняя ширина = 26 символов.
+    """
+    W = 26  # внутренняя ширина (без рамок)
+    top = "╔" + "═" * W + "╗"
+    # Заголовок
+    title_visual_len = sum(2 if ord(c) > 127 else 1 for c in title)
+    left_pad = (W - title_visual_len) // 2
+    right_pad = W - title_visual_len - left_pad
+    title_line = "║" + " " * left_pad + title + " " * right_pad + "║"
+    # Пустая строка
+    empty_line = "║" + " " * W + "║"
+    # Строки данных
+    data_lines = []
     for line in lines:
-        clean = line.replace("*","").replace("_","").replace("`","")
-        length = sum(2 if ord(c) > 127 else 1 for c in clean)
-        pad = max(0, w - length - 2)
-        res.append("║ " + line + " " * pad + "║")
-    res.append("╚" + "═" * w + "╝")
-    return "```\n" + "\n".join(res) + "\n```"
+        visual_len = sum(2 if ord(c) > 127 else 1 for c in line)
+        pad = W - visual_len
+        data_lines.append("║" + line + " " * pad + "║")
+    bottom = "╚" + "═" * W + "╝"
+
+    block = "\n".join([top, title_line, empty_line] + data_lines + [bottom])
+    return "```\n" + block + "\n```"
 
 def create_invoice(user_id, game_id, amount, game_type):
     url = "https://pay.crypt.bot/api/createInvoice"
@@ -187,8 +198,7 @@ def start(message):
         end_f = datetime.strptime(fast["end_time"],"%Y-%m-%d %H:%M:%S")
         rem_f = end_f - datetime.now(); mins = max(0, rem_f.seconds//60)
         lines_f = [f"🪙 Банк: {bank_f:.1f} TON", f"👥 {sold_f}/{fast['max_tickets']}", f"🎯 Победитель: 1", f"⏳ {mins}м"]
-        if game:  # Если уже есть стандартный блок, добавляем отступ
-            txt += "\n\n\n"  # 3 пустые строки между блоками
+        if game: txt += "\n\n\n"
         txt += perfect_block("⚡️ БЫСТРЫЙ", lines_f)
         markup.add(types.InlineKeyboardButton("⚡️ Купить (Быстрый)", callback_data="buy_fast"))
 
@@ -436,7 +446,7 @@ def text_handler(message):
     bot.send_message(message.chat.id, "Используй /start")
 
 # ==================== ЗАПУСК ====================
-print("Lucky Bank v6.0 PERFECT BLOCK")
+print("Lucky Bank v7.0 PERFECT WALLS")
 bot.remove_webhook()
 time.sleep(1)
 db = load_db()
