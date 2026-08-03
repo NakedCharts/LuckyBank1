@@ -121,6 +121,7 @@ def finish_fast_game(game_id):
     if game: process_finish(db, game, "fast_tickets", "fast_games")
 
 def perfect_block(title, lines):
+    """Рисует идеально ровный блок с моноширинным шрифтом (code block)"""
     w = 26
     res = ["╔" + "═" * w + "╗"]
     res.append("║ " + title.center(w - 2) + " ║")
@@ -131,7 +132,7 @@ def perfect_block(title, lines):
         pad = max(0, w - length - 2)
         res.append("║ " + line + " " * pad + "║")
     res.append("╚" + "═" * w + "╝")
-    return "\n".join(res)
+    return "```\n" + "\n".join(res) + "\n```"
 
 def create_invoice(user_id, game_id, amount, game_type):
     url = "https://pay.crypt.bot/api/createInvoice"
@@ -186,6 +187,8 @@ def start(message):
         end_f = datetime.strptime(fast["end_time"],"%Y-%m-%d %H:%M:%S")
         rem_f = end_f - datetime.now(); mins = max(0, rem_f.seconds//60)
         lines_f = [f"🪙 Банк: {bank_f:.1f} TON", f"👥 {sold_f}/{fast['max_tickets']}", f"🎯 Победитель: 1", f"⏳ {mins}м"]
+        if game:  # Если уже есть стандартный блок, добавляем отступ
+            txt += "\n\n\n"  # 3 пустые строки между блоками
         txt += perfect_block("⚡️ БЫСТРЫЙ", lines_f)
         markup.add(types.InlineKeyboardButton("⚡️ Купить (Быстрый)", callback_data="buy_fast"))
 
@@ -401,11 +404,10 @@ def text_handler(message):
                     val = float(message.text) if param in ["price","commission"] else int(message.text)
                     db["settings"][param] = val; save_db(db)
                     del admin_input_state[uid]
-                    # Удаляем сообщение-запрос
                     msg_id = admin_input_state.pop(f"{uid}_msg", None)
                     if msg_id: bot.delete_message(message.chat.id, msg_id)
                     bot.send_message(message.chat.id, "✅ Сохранено!")
-                    show_std(message)  # Покажем обновлённые настройки
+                    show_std(message)
                 except: bot.send_message(message.chat.id, "❌ Неверное число.")
             elif parts[1] == "fast":
                 param = parts[2]
@@ -434,7 +436,7 @@ def text_handler(message):
     bot.send_message(message.chat.id, "Используй /start")
 
 # ==================== ЗАПУСК ====================
-print("Lucky Bank v5.0 FINAL")
+print("Lucky Bank v6.0 PERFECT BLOCK")
 bot.remove_webhook()
 time.sleep(1)
 db = load_db()
