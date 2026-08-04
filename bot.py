@@ -207,33 +207,7 @@ def start(message):
         if ref_id != uid:
             db.setdefault("referrals", {}).setdefault(ref_id, {"count": 0, "rewarded": False})
             db["referrals"][ref_id]["count"] += 1
-
-            # Выдаём бесплатный билет новому юзеру
-            if first_time:
-                # Убедимся, что игра есть
-                game = get_active_game(db, "standard")
-                if not game:
-                    game = create_game(db, "standard")
-                
-                ticket_number = len(db.get("tickets", [])) + 1
-                db.setdefault("tickets", []).append({
-                    "id": ticket_number,
-                    "user_id": int(uid),
-                    "username": message.from_user.username,
-                    "game_id": game["id"]
-                })
-                
-                # СРАЗУ СОХРАНЯЕМ, чтобы билет не потерялся
-                save_db(db)
-                
-                try:
-                    bot.send_message(
-                        int(uid),
-                        f"🎁 Ты получил *бесплатный билет #{ticket_number}* в 🎰 STANDART за переход по реферальной ссылке!",
-                        parse_mode="Markdown"
-                    )
-                except:
-                    pass
+            save_db(db)
 
     save_db(db)
 
